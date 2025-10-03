@@ -6,7 +6,7 @@ This project is an all-in-one solution to scrape any website, process its conten
 
 (Suggestion: Replace this placeholder with a screenshot or GIF of your application in action!)
 
-Key Features
+# Key Features
 🤖 Smart Scraping Engine: Automatically detects site technology (React, WordPress, JS frameworks, etc.) and bot protection to choose the most effective scraping method (fast static requests or a robust dynamic browser).
 
 🕸️ Full Site Crawling: Traverses and scrapes all unique internal pages of a target website, not just a single URL.
@@ -23,7 +23,7 @@ Key Features
 
 🚀 Background Processing: Scraping, content processing, and embedding creation all run as background tasks on the server, keeping the UI fast and responsive.
 
-Technology Stack
+# Technology Stack
 Backend: Python, FastAPI
 
 Frontend: HTML, Tailwind CSS, Vanilla JavaScript
@@ -32,7 +32,7 @@ Scraping: BeautifulSoup, Selenium (Undetected Chromedriver), Wappalyzer, BuiltWi
 
 Database: Supabase (PostgreSQL)
 
-AI/ML:
+* AI/ML:
 
 LLM: Ollama (gemma:7b)
 
