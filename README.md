@@ -42,7 +42,8 @@ Embeddings: HuggingFace Sentence Transformers (local)
 
 Vector Store: FAISS (local)
 
-How It Works
+## How It Works
+
 The application follows a complete pipeline from web scraping to intelligent Q&A:
 
 Scrape Task: The user enters a URL in the web UI. The FastAPI backend starts a background task.
@@ -70,6 +71,7 @@ git clone <your-repository-url>
 cd <your-repository-folder>
 
 3. Set Up Python Environment
+
 # Create a virtual environment
 python -m venv venv
 
