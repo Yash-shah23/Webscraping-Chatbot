@@ -24,15 +24,15 @@ This project is an all-in-one solution to scrape any website, process its conten
 🚀 Background Processing: Scraping, content processing, and embedding creation all run as background tasks on the server, keeping the UI fast and responsive.
 
 # Technology Stack
-Backend: Python, FastAPI
+* Backend: Python, FastAPI
 
-Frontend: HTML, Tailwind CSS, Vanilla JavaScript
+* Frontend: HTML, Tailwind CSS, Vanilla JavaScript
 
-Scraping: BeautifulSoup, Selenium (Undetected Chromedriver), Wappalyzer, BuiltWith
+* Scraping: BeautifulSoup, Selenium (Undetected Chromedriver), Wappalyzer, BuiltWith
 
-Database: Supabase (PostgreSQL)
+* Database: Supabase (PostgreSQL)
 
-* AI/ML:
+## AI/ML:
 
 LLM: Ollama (gemma:7b)
 
@@ -97,12 +97,12 @@ SUPABASE_KEY="YOUR_SUPABASE_ANON_PUBLIC_KEY"
 5. Download the Local LLM
 Pull the Gemma model using Ollama. This will download the model to your machine (this may take some time).
 
-ollama pull gemma:7b
+- ollama pull gemma:7b
 
 6. Run the Application
 Start the Backend Server:
 
-python main.py
+- python main.py
 
 Leave this terminal running. It is your API server.
 
