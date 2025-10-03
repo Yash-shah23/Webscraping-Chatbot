@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scraper & Chatbot Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .chat-bubble-user { background-color: #3b82f6; color: white; }
+        .chat-bubble-assistant { background-color: #e5e7eb; color: #1f2937; }
+        .chat-bubble { max-width: 80%; padding: 0.75rem 1rem; border-radius: 1.25rem; }
+        .session-item.active { background-color: #eef2ff; border-right: 4px solid #4f46e5; }
+        /* --- LOADER CSS --- */
+        .loader { border: 2px solid #f3f3f3; border-top: 2px solid #3498db; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="flex h-screen bg-gray-100">
+        <!-- Left Sidebar -->
+        <aside class="w-1/4 bg-white border-r flex flex-col">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h1 class="text-xl font-bold">Chat Sessions</h1>
+                <button id="refresh-btn" class="text-sm bg-gray-200 text-gray-700 font-semibold py-1 px-3 rounded-md hover:bg-gray-300">Refresh</button>
+            </div>
+            <div class="p-4">
+                <button id="new-chat-btn" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition">+ New Scrape & Chat</button>
+            </div>
+            <nav id="session-list" class="flex-grow overflow-y-auto"></nav>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main id="main-content" class="w-3/4 p-4 md:p-8 flex items-center justify-center"></main>
+    </div>
+
+    <script>
+        const mainContent = document.getElementById('main-content');
+        const sessionList = document.getElementById('session-list');
+        const newChatBtn = document.getElementById('new-chat-btn');
+        const refreshBtn = document.getElementById('refresh-btn');
+        
+        let allSessions = [];
+        let currentDocId = null;
+        let currentSessionId = null;
+        let chatHistory = [];
+
+        // --- Templates for UI components ---
+        const scraperViewTemplate = `
+            <div class="bg-white p-8 rounded-xl shadow-lg max-w-2xl mx-auto text-center">
+                <h1 class="text-3xl font-bold mb-2">Start a New Chat Session</h1>
+                <p class="text-gray-600 mb-6">Enter a URL to scrape, process, and prepare for Q&A.</p>
+                <div class="flex gap-3 mb-4">
+                    <input type="url" id="url-input" placeholder="https://example.com" class="flex-grow p-3 border rounded-lg" value="https://creerinfotech.com/">
+                    <button id="scrape-btn" class="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700">Start Processing</button>
+                </div>
+                <div id="scraper-status" class="hidden mt-6 p-4 rounded-lg bg-blue-50 text-blue-800"><p id="status-text"></p></div>
+            </div>`;
+        
+        const chatbotViewTemplate = `
+            <div class="bg-white rounded-xl shadow-lg w-full h-full flex flex-col">
+                <div class="p-4 border-b"><h2 class="text-xl font-bold text-gray-800" id="chat-url-display"></h2></div>
+                <div id="chat-window" class="flex-grow p-6 overflow-y-auto"></div>
+                <div class="p-4 border-t bg-gray-50">
+                    <div class="flex gap-4">
+                        <input type="text" id="chat-input" placeholder="Ask a question..." class="flex-grow p-3 border rounded-lg">
+                        <button id="send-btn" class="bg-blue-600 text-white font-bold py-3 px-6 rounded-lg">Send</button>
+                    </div>
+                </div>
+            </div>`;
+
+        // --- Initialization & Session Loading ---
+        window.onload = () => {
+            showScraperView();
+            loadSessions();
+        };
+        newChatBtn.onclick = showScraperView;
+        refreshBtn.onclick = loadSessions;
+
+        async function loadSessions() {
+            try {
+                const response = await fetch("http://127.0.0.1:8000/sessions");
+                allSessions = await response.json();
+                renderSessionList();
+            } catch (err) { console.error("Failed to load sessions:", err); }
+        }
+
+        function renderSessionList() {
+            const activeSessionId = currentSessionId;
+            sessionList.innerHTML = '';
+            allSessions.forEach(session => {
+                const sessionEl = document.createElement('a');
+                sessionEl.href = '#';
+                
+                let statusIndicator = '';
+                // This block correctly displays the status loader
+                if (session.status === 'processing') {
+                    sessionEl.className = 'session-item block p-4 border-b bg-gray-50 text-gray-500';
+                    statusIndicator = `<div class="flex items-center gap-2"><div class="loader"></div><span class="text-xs">Processing...</span></div>`;
+                } else if (session.status === 'failed') {
+                    sessionEl.className = 'session-item block p-4 border-b bg-red-50 text-red-600';
+                    statusIndicator = `<span class="text-xs font-semibold">Failed</span>`;
+                } else { // 'ready'
+                    sessionEl.className = 'session-item block p-4 border-b hover:bg-gray-50 cursor-pointer';
+                    sessionEl.onclick = (e) => { e.preventDefault(); loadChat(session.session_id); };
+                }
+
+                if (session.session_id === activeSessionId) {
+                    sessionEl.classList.add('active');
+                }
+
+                sessionEl.innerHTML = `
+                    <p class="font-semibold truncate">${session.documents?.website_url || 'Unknown URL'}</p>
+                    <p class="text-sm text-gray-500">${new Date(session.created_at).toLocaleString()}</p>
+                    ${statusIndicator}`;
+                sessionList.appendChild(sessionEl);
+            });
+        }
+
+        async function startScraping() {
+            const urlInput = document.getElementById('url-input');
+            const scrapeBtn = document.getElementById('scrape-btn');
+            const statusText = document.getElementById('status-text');
+            const scraperStatus = document.getElementById('scraper-status');
+
+            scrapeBtn.disabled = true;
+            scrapeBtn.textContent = 'Processing...';
+            scraperStatus.classList.remove('hidden');
+            statusText.textContent = 'Scraping started in the background. Click "Refresh" in the sidebar in a few minutes to see the new session.';
+
+            try {
+                // --- BUG FIX: Corrected the API URL ---
+                const response = await fetch("http://127.0.0.1:8000/scrape", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url: urlInput.value })
+                });
+                if (!response.ok) throw new Error((await response.json()).detail);
+                
+                // After starting, do a single refresh to show the new "processing" session
+                setTimeout(loadSessions, 1500); 
+
+            } catch (err) {
+                statusText.textContent = "Error: " + err.message;
+            } finally {
+                scrapeBtn.disabled = false;
+                scrapeBtn.textContent = 'Start Processing';
+            }
+        }
+        
+        function loadChat(sessionId) {
+            const session = allSessions.find(s => s.session_id === sessionId);
+            if (!session || session.status !== 'ready') return;
+            
+            currentSessionId = sessionId;
+            renderSessionList(); 
+
+            mainContent.innerHTML = chatbotViewTemplate;
+            currentDocId = session.doc_id;
+            chatHistory = session.conversation || [];
+
+            document.getElementById('chat-url-display').textContent = session.documents.website_url;
+            const chatWindow = document.getElementById('chat-window');
+            const chatInput = document.getElementById('chat-input');
+            const sendBtn = document.getElementById('send-btn');
+            
+            sendBtn.onclick = sendMessage;
+            chatInput.addEventListener('keydown', (e) => e.key === 'Enter' && sendMessage());
+
+            chatWindow.innerHTML = '';
+            if (chatHistory.length === 0) {
+                appendMessage('Hello! Ask me anything about the document.', 'assistant');
+            } else {
+                for (let i = 0; i < chatHistory.length; i++) {
+                    appendMessage(chatHistory[i], i % 2 === 0 ? 'user' : 'assistant');
+                }
+            }
+        }
+
+        async function sendMessage() {
+            const chatInput = document.getElementById('chat-input');
+            const question = chatInput.value.trim();
+            if (!question) return;
+
+            appendMessage(question, 'user');
+            chatInput.value = '';
+            
+            try {
+                const response = await fetch("http://127.0.0.1:8000/chat", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: currentSessionId, doc_id: currentDocId,
+                        question: question, history: chatHistory
+                    })
+                });
+                if(!response.ok) throw new Error((await response.json()).detail);
+
+                const data = await response.json();
+                appendMessage(data.answer, 'assistant');
+                
+                chatHistory.push(question, data.answer);
+                const currentSession = allSessions.find(s => s.session_id === currentSessionId);
+                if(currentSession) currentSession.conversation = chatHistory;
+
+            } catch (err) {
+                appendMessage("Sorry, I encountered an error. Please try again.", 'assistant');
+            }
+        }
+        
+        function showScraperView() {
+            mainContent.innerHTML = scraperViewTemplate;
+            document.getElementById('scrape-btn').onclick = startScraping;
+            currentSessionId = null;
+            renderSessionList();
+        }
+        
+        function appendMessage(text, sender) {
+            const chatWindow = document.getElementById('chat-window');
+            const msgWrapper = document.createElement('div');
+            msgWrapper.className = `flex mb-4 ${sender === 'user' ? 'justify-end' : 'justify-start'}`;
+            msgWrapper.innerHTML = `<div class="chat-bubble ${sender === 'user' ? 'chat-bubble-user' : 'chat-bubble-assistant'}">${text}</div>`;
+            chatWindow.appendChild(msgWrapper);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+    </script>
+</body>
+</html>
