@@ -1,10 +1,8 @@
-
 fastapi
 uvicorn[standard]
 beautifulsoup4
 requests
 selenium
-webdriver-manager
 python-Wappalyzer
 undetected-chromedriver
 builtwith
@@ -16,4 +14,4 @@ langchain-ollama
 faiss-cpu
 sentence-transformers
 langchain-huggingface
-pickle-mixin
+vaderSentiment
