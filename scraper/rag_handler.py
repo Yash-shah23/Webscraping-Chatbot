@@ -1,7 +1,8 @@
 import os
 import pickle
+from langchain.retrievers.multi_query import MultiQueryRetriever
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.llms.ollama import Ollama
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.docstore.document import Document
@@ -10,32 +11,30 @@ from langchain.schema.runnable import RunnablePassthrough
 from langchain.schema.output_parser import StrOutputParser
 from config import supabase
 
-# --- KEY CHANGE: Logic to save/load the cache from a file ---
 CACHE_DIR = "retriever_cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
 RETRIEVER_CACHE = {}
 
 def load_cache_from_disk():
-    """Loads all saved retriever files from the cache directory into memory."""
+    """Loads all saved vector stores from the cache directory into memory."""
     for filename in os.listdir(CACHE_DIR):
         if filename.endswith(".pkl"):
             doc_id = filename.split('.')[0]
-            with open(os.path.join(CACHE_DIR, filename), 'rb') as f:
-                RETRIEVER_CACHE[doc_id] = pickle.load(f)
-            print(f"[CACHE] Loaded retriever for doc_id {doc_id} from disk.")
+            try:
+                with open(os.path.join(CACHE_DIR, filename), 'rb') as f:
+                    RETRIEVER_CACHE[doc_id] = pickle.load(f)
+                print(f"[CACHE] Loaded vector store for doc_id {doc_id} from disk.")
+            except Exception as e:
+                print(f"[CACHE_ERROR] Failed to load {filename}: {e}")
 
-# --- Load the cache when the application starts ---
 load_cache_from_disk()
 
 def prepare_retriever_for_doc(doc_id: str):
-    """
-    Prepares and caches the RAG retriever, and now saves it to disk.
-    """
+    """Prepares and caches the FAISS vector store and saves it to disk."""
     if doc_id in RETRIEVER_CACHE:
-        print(f"[CACHE] Retriever for doc_id {doc_id} already in memory.")
         return True
 
-    print(f"[RAG] Preparing new retriever for doc_id: {doc_id}...")
+    print(f"[RAG] Preparing new vector store for doc_id: {doc_id}...")
     try:
         response = supabase.table('documents').select('content').eq('doc_id', doc_id).single().execute()
         if not response.data or not response.data.get('content'):
@@ -49,52 +48,67 @@ def prepare_retriever_for_doc(doc_id: str):
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         chunks = text_splitter.split_documents([doc])
         
-        print("[RAG] Creating embeddings and vector store...")
         embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
         vectorstore = FAISS.from_documents(chunks, embeddings)
         
-        retriever = vectorstore.as_retriever()
-        RETRIEVER_CACHE[doc_id] = retriever
+        RETRIEVER_CACHE[doc_id] = vectorstore
         
-        # --- KEY CHANGE: Save the newly created retriever to a file ---
         with open(os.path.join(CACHE_DIR, f"{doc_id}.pkl"), 'wb') as f:
-            pickle.dump(retriever, f)
+            pickle.dump(vectorstore, f)
         
-        print(f"[RAG] Retriever for doc_id {doc_id} is ready and saved to disk.")
+        print(f"[RAG] Vector store for doc_id {doc_id} is ready and saved.")
         return True
     except Exception as e:
-        print(f"[RAG_ERROR] Failed to prepare retriever: {e}")
+        print(f"[RAG_ERROR] Failed to prepare vector store: {e}")
         return False
 
-def ask_question(doc_id: str, question: str) -> str:
-    """Asks a question using the pre-cached RAG retriever."""
+def ask_question(doc_id: str, question: str, history: list) -> str:
+    """
+    Asks a question using a faster, conversational RAG pipeline.
+    """
     if doc_id not in RETRIEVER_CACHE:
-        # Before failing, try to load it from disk one more time
-        try:
-            with open(os.path.join(CACHE_DIR, f"{doc_id}.pkl"), 'rb') as f:
-                RETRIEVER_CACHE[doc_id] = pickle.load(f)
-            print(f"[CACHE] Lazily loaded retriever for doc_id {doc_id} from disk.")
-        except FileNotFoundError:
-             raise Exception("Retriever not prepared and not found on disk. Please re-scrape the document.")
+        print(f"[CACHE] Vector store for {doc_id} not in memory. Preparing now...")
+        if not prepare_retriever_for_doc(doc_id):
+            return "Sorry, I could not prepare the document for chat. The data might be missing."
 
-    retriever = RETRIEVER_CACHE[doc_id]
+    vectorstore = RETRIEVER_CACHE[doc_id]
+    llm = Ollama(model="gemma:7b")
     
+    # --- THIS IS THE NEW, FASTER RETRIEVER ---
+    # We use the base retriever which is much faster than the Multi-Query one.
+    retriever = vectorstore.as_retriever()
+
     template = """
-    Answer the question based only on the following context. If the answer is not in the context, say 'Sorry, I don't have that information in the document.'
+    You are "Athena," a friendly, enthusiastic, and highly intelligent AI assistant. Your primary goal is to provide helpful, well-structured, and engaging answers based ONLY on the context provided from a scraped website and the previous chat history.
 
-    CONTEXT:
+    **Your Core Instructions:**
+    1.  **Greeting:** Always start your response with a warm, positive greeting like "Of course!", "Absolutely!", or "I'd be happy to help with that!".
+    2.  **Formatting:** Use Markdown to make your answers clear and easy to read.
+        - Use **bold text** for titles, headings, and important keywords.
+        - Use bullet points (`*`) for lists of services, features, or items.
+        - Add relevant emojis to make the conversation more engaging and visually appealing.
+    3.  **Synthesize, Don't Just Quote:** Combine information from the context to form a complete, easy-to-read answer. Do not just repeat snippets.
+    4.  **Use Chat History:** If the user asks a follow-up question, refer to the previous conversation to understand the full context.
+    5.  **Stay Grounded:** If the answer is not in the provided context, you MUST respond with: "That's a great question, but I don't have that information in the provided documents." Do not use external knowledge.
+    6.  **Closing:** Always end your response with a friendly, open-ended question to encourage further interaction, like "Is there anything else I can help you with?" or "Would you like to dive deeper into any of these points?".
+
+    **CONTEXT:**
+    ---
     {context}
+    ---
 
-    QUESTION:
-    {question}
+    **CHAT HISTORY:**
+    {chat_history}
 
-    ANSWER:
+    **USER'S QUESTION:** {question}
+
+    **YOUR ANSWER:**
     """
     prompt = ChatPromptTemplate.from_template(template)
-    llm = Ollama(model="gemma:7b")
 
+    # --- The Final, Faster RAG Chain ---
     rag_chain = (
-        {"context": retriever, "question": RunnablePassthrough()}
+        {"context": retriever, "question": RunnablePassthrough(), "chat_history": lambda x: history}
         | prompt
         | llm
         | StrOutputParser()

@@ -37,6 +37,11 @@ class ScrapeResponse(BaseModel):
     message: str
 class ChatResponse(BaseModel): answer: str
 
+
+@app.get("/", summary="API Health Check")
+async def root():
+    return {"message": "API is running. Use /docs for API documentation."}
+
 # --- API Endpoints ---
 @app.get("/sessions", summary="Get all chat sessions", response_model=List[SessionInfo])
 async def fetch_sessions_endpoint():
@@ -57,10 +62,13 @@ async def scrape_endpoint(req: ScrapeRequest, background_tasks: BackgroundTasks)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to start task: {e}")
 
+
 @app.post("/chat", summary="Ask a question and save conversation", response_model=ChatResponse)
 async def chat_endpoint(req: ChatRequest):
     try:
-        answer = ask_question(doc_id=req.doc_id, question=req.question)
+        # --- KEY CHANGE: Pass the history to the ask_question function ---
+        answer = ask_question(doc_id=req.doc_id, question=req.question, history=req.history)
+        
         new_history = req.history + [req.question, answer]
         update_conversation(session_id=req.session_id, conversation_history=new_history)
         return {"answer": answer}

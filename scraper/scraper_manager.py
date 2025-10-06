@@ -36,22 +36,31 @@ def extract_and_clean_content(soup: BeautifulSoup) -> str:
     return '\n'.join(line for line in lines if line)
 
 def choose_scraper_strategy(tech_report: dict) -> str:
-    """Makes a decision based on the simplified technology list."""
+    """
+    Makes a smarter, more robust decision on the scraping strategy.
+    """
     if not isinstance(tech_report, dict):
         print("[STRATEGY_WARN] Tech report not in expected format. Defaulting to DYNAMIC.")
         return 'dynamic'
 
     all_techs = set(tech_report.get("technologies", []))
     
-    bot_protectors = {'datadome', 'cloudflare bot management', 'akamai', 'imperva'}
-    js_frameworks = {'react', 'vue.js', 'angular', 'svelte', 'next.js', 'nuxt.js'}
+    # --- KEY CHANGE: Expanded list of triggers for the dynamic scraper ---
+    dynamic_triggers = {
+        # Bot protectors
+        'datadome', 'cloudflare', 'akamai', 'imperva',
+        # JS Frameworks
+        'react', 'vue.js', 'angular', 'svelte', 'next.js', 'nuxt.js',
+        # Modern Site Builders that are heavily JS-based
+        'webflow', 'framer', 'wix', 'squarespace'
+    }
     
-    if not bot_protectors.isdisjoint(all_techs):
-        print("[STRATEGY] Bot protection detected. Choosing DYNAMIC scraper.")
+    # Check if any of the dynamic triggers were detected
+    found_triggers = all_techs.intersection(dynamic_triggers)
+    if found_triggers:
+        print(f"[STRATEGY] Dynamic trigger found: {list(found_triggers)}. Choosing DYNAMIC scraper.")
         return 'dynamic'
-    if not js_frameworks.isdisjoint(all_techs):
-        print("[STRATEGY] JavaScript framework detected. Choosing DYNAMIC scraper.")
-        return 'dynamic'
+
     print("[STRATEGY] Standard website detected. Choosing STATIC scraper.")
     return 'static'
 
@@ -70,12 +79,10 @@ def scrape_and_process_site(start_url: str, doc_id: str, session_id: str):
     try:
         # --- STEP 1: Create placeholder records in the CORRECT order ---
         print("[PIPELINE] Creating initial placeholder records...")
-        # First, create a placeholder document with an empty content field
         upsert_document(doc_id=doc_id, website_url=start_url, content_data={})
-        # NOW, we can safely create the session because the document exists
         create_initial_session(doc_id, session_id)
 
-        # --- STEP 2: Scrape the site (existing logic) ---
+        # --- STEP 2: Scrape the site (using the new, smarter strategy) ---
         parsed_start_url = urlparse(start_url)
         base_netloc = parsed_start_url.netloc
         if not base_netloc: raise ValueError("Invalid URL provided.")
@@ -127,7 +134,6 @@ def scrape_and_process_site(start_url: str, doc_id: str, session_id: str):
                 json.dump(final_output, f, ensure_ascii=False, indent=4)
             print(f"[PIPELINE] Data saved locally to {file_path}")
 
-            # Now, UPDATE the document record with the full scraped content
             upsert_document(doc_id, final_output["website_url"], final_output)
 
             print("[PIPELINE] Preparing RAG embeddings...")
@@ -142,6 +148,5 @@ def scrape_and_process_site(start_url: str, doc_id: str, session_id: str):
 
     except Exception as e:
         print(f"[PIPELINE_ERROR] The background task failed critically: {e}")
-        # Ensure the session is marked as failed on any unexpected error
         update_session_status(session_id, 'failed')
 

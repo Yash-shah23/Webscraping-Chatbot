@@ -10,12 +10,10 @@ undetected-chromedriver
 builtwith
 supabase
 python-dotenv
-
-# --- New RAG Libraries ---
 langchain
 langchain-community
 langchain-ollama
-# FAISS is a local vector store from Facebook AI
 faiss-cpu
-# SentenceTransformers is for creating embeddings locally
 sentence-transformers
+langchain-huggingface
+pickle-mixin
