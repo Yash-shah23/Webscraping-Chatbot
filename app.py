@@ -116,8 +116,10 @@ app = FastAPI(title="Web Scraper & Chat API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], allow_credentials=True,
-    allow_methods=["*"], allow_headers=["*"],
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all HTTP methods
+    allow_headers=["*"],  # Allows all headers
 )
 
 # --- Pydantic Models for API validation and response schemas ---
